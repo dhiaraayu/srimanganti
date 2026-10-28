@@ -136,7 +136,7 @@ class _ShowDetailScreenState extends State<ShowDetailScreen> {
                   _buildTopBar(),
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [

@@ -469,7 +469,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onRefresh: _loadUserData,
                     color: const Color(0xFF0B3D2E),
                     child: ListView(
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
                       children: [
                         // KARTU PROFIL
                         Container(

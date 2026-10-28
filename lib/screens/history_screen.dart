@@ -537,7 +537,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           24.0,
                           0,
                           24.0,
-                          120.0,
+                          150.0,
                         ),
                         itemCount: filteredTickets.length,
                         itemBuilder: (context, index) =>
