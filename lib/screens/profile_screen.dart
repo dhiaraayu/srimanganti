@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
-
 import 'dart:ui';
 import 'dart:io';
 
-import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/db_helper.dart';
 import '../services/supabase_service.dart';
-import '../services/blockchain_service.dart';
 import 'auth_screen.dart';
+import 'about_developer_screen.dart'; // <-- IMPORT HALAMAN BARU
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -26,7 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String namaLengkap = 'Memuat...';
   String emailUser = 'Memuat...';
   String waUser = 'Memuat...';
-  String? fotoProfilUrl; // <-- SEKARANG PAKAI URL
+  String? fotoProfilUrl;
 
   bool _isBiometricEnabled = false;
 
@@ -35,9 +33,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController waController = TextEditingController();
   final TextEditingController oldPassController = TextEditingController();
   final TextEditingController newPassController = TextEditingController();
-
-  late VideoPlayerController _videoController;
-  bool _isVideoInitialized = false;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -49,15 +44,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _loadUserData();
-
-    _videoController = VideoPlayerController.asset('assets/video_kraton.mp4')
-      ..initialize()
-          .then((_) {
-            if (mounted) setState(() => _isVideoInitialized = true);
-          })
-          .catchError((error) {
-            print("Video belum ditambahkan di folder assets.");
-          });
   }
 
   Future<void> _loadUserData() async {
@@ -95,7 +81,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _loadFromLocal(email, isBioEnabled);
       }
 
-      // AMBIL FOTO DARI SUPABASE
       final url = await SupabaseService().getFotoProfilUrl(email);
       if (mounted) {
         setState(() {
@@ -177,12 +162,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         imageQuality: 50,
       );
       if (image != null) {
-        setState(() => isBlurred = true); // Loading
+        setState(() => isBlurred = true);
 
         final email = await DBHelper().getSesi();
         if (email == null) return;
 
-        // Upload ke Supabase
         final newUrl = await SupabaseService().uploadFotoProfil(
           email,
           image.path,
@@ -327,80 +311,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _showBlockchainLedger(BuildContext context) async {
-    final chain = await BlockchainService.getChain();
-
-    if (!context.mounted) return;
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text(
-            'Blockchain Ledger',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: chain.length,
-              itemBuilder: (context, index) {
-                final block = chain[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  color: const Color(0xFFF9F6EE),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Blok #${block.index}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const Divider(),
-                        Text(
-                          'Data: ${block.data}',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Hash: ${block.hash.substring(0, 20)}...',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Tutup',
-                style: TextStyle(color: Color(0xFF0B3D2E)),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   @override
   void dispose() {
-    _videoController.dispose();
     super.dispose();
   }
 
@@ -486,7 +398,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ClipOval(
                                     child: fotoProfilUrl != null
                                         ? Image.network(
-                                            // <-- PAKAI NETWORK IMAGE
                                             fotoProfilUrl!,
                                             width: 90,
                                             height: 90,
@@ -589,179 +500,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF3E9D2),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: const Color(0xFFE6D5B8)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: const [
-                                  Icon(
-                                    Icons.groups,
-                                    color: Color(0xFF0B3D2E),
-                                    size: 18,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'ANGGOTA KELOMPOK',
-                                    style: TextStyle(
-                                      color: Color(0xFF0B3D2E),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              _buildMemberCard(
-                                'Alvina Kumala Budiastuti',
-                                '124240046',
-                              ),
-                              const SizedBox(height: 8),
-                              _buildMemberCard('Dhiara Ayu Nasta', '124240185'),
-                              const SizedBox(height: 8),
-                              _buildMemberCard(
-                                'Nurisshifa Alfiyana',
-                                '124240186',
-                              ),
-                              const SizedBox(height: 20),
-                              const Text(
-                                'Dokumentasi Kunjungan',
-                                style: TextStyle(
-                                  color: Color(0xFF0B3D2E),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: AspectRatio(
-                                  aspectRatio: 16 / 9,
-                                  child: _isVideoInitialized
-                                      ? Stack(
-                                          alignment: Alignment.bottomRight,
-                                          children: [
-                                            GestureDetector(
-                                              onTap: () {
-                                                setState(() {
-                                                  _videoController
-                                                          .value
-                                                          .isPlaying
-                                                      ? _videoController.pause()
-                                                      : _videoController.play();
-                                                });
-                                              },
-                                              child: Container(
-                                                color: Colors.black,
-                                                child: VideoPlayer(
-                                                  _videoController,
-                                                ),
-                                              ),
-                                            ),
-                                            Padding(
-                                              padding: const EdgeInsets.all(
-                                                8.0,
-                                              ),
-                                              child: FloatingActionButton.small(
-                                                backgroundColor: Colors.white
-                                                    .withOpacity(0.8),
-                                                elevation: 0,
-                                                onPressed: () {
-                                                  setState(() {
-                                                    _videoController
-                                                            .value
-                                                            .isPlaying
-                                                        ? _videoController
-                                                              .pause()
-                                                        : _videoController
-                                                              .play();
-                                                  });
-                                                },
-                                                child: Icon(
-                                                  _videoController
-                                                          .value
-                                                          .isPlaying
-                                                      ? Icons.pause
-                                                      : Icons.play_arrow,
-                                                  color: const Color(
-                                                    0xFF0B3D2E,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        )
-                                      : Container(
-                                          color: Colors.grey[300],
-                                          child: const Center(
-                                            child: Text(
-                                              'Video belum tersedia / Loading...',
-                                              style: TextStyle(fontSize: 10),
-                                            ),
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0B3D2E),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: const [
-                                  Icon(
-                                    Icons.star,
-                                    color: Color(0xFFE6D5B8),
-                                    size: 14,
-                                  ),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'CATATAN REFLEKSI PROYEK AKHIR',
-                                    style: TextStyle(
-                                      color: Color(0xFFE6D5B8),
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Kesan & Pesan Kuliah Pemrograman Aplikasi Mobile (PAM)',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                '"Mempelajari pemrograman Flutter membuka wawasan saya tentang cara membuat aplikasi mobile yang bermanfaat..."',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
+
                         const Text(
                           'PENGATURAN AKUN',
                           style: TextStyle(
@@ -842,23 +581,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 }),
                               ),
                               const Divider(height: 1),
+                              // MENU BARU: TENTANG DEVELOPER
                               ListTile(
                                 leading: const Icon(
-                                  Icons.account_tree,
+                                  Icons.info_outline,
                                   color: Color(0xFF0B3D2E),
                                 ),
                                 title: const Text(
-                                  'Lihat Ledger Blockchain',
+                                  'Tentang Developer',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 subtitle: const Text(
-                                  'Riwayat transaksi terenkripsi',
+                                  'Informasi tim & refleksi proyek',
                                   style: TextStyle(fontSize: 11),
                                 ),
-                                onTap: () => _showBlockchainLedger(context),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const AboutDeveloperScreen(),
+                                    ),
+                                  );
+                                },
                               ),
                               const Divider(height: 1),
                               // TOMBOL RESET DATA LOKAL
@@ -979,49 +726,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           style: const TextStyle(fontSize: 10, color: Colors.grey),
         ),
       ],
-    );
-  }
-
-  Widget _buildMemberCard(String name, String nim) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE6D5B8)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: const BoxDecoration(
-              color: Color(0xFF0B3D2E),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.person, color: Colors.white, size: 14),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0B3D2E),
-                  ),
-                ),
-                Text(
-                  nim,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1196,6 +900,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFC0392B),
+                    foregroundColor: Colors.white,
                   ),
                   child: const Text('Ya, Keluar'),
                 ),
