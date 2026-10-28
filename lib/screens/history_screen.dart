@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tiket_srimanganti/screens/e_ticket_screen.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart'; // Wajib untuk kDebugMode
 
 import 'dart:async';
 
@@ -50,6 +51,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
     try {
       final email = await DBHelper().getSesi();
       if (email != null && email.isNotEmpty) {
+        
+        // Auto update tiket lewat
+        await SupabaseService().cekDanUpdateTiketSelesai(email);
+
         final data = await SupabaseService()
             .getHistoryTiket(email)
             .timeout(const Duration(seconds: 10));
@@ -75,13 +80,28 @@ class _HistoryScreenState extends State<HistoryScreen> {
           String kodeBookingAsli = rawKode.contains('|')
               ? rawKode.split('|')[0]
               : rawKode;
+              
           String statusRaw = (item['status']?.toString() ?? 'Aktif').trim();
+          
+          DateTime? tglKunjungan;
+          if (item['tanggal_kunjungan'] != null) {
+             tglKunjungan = DateTime.tryParse(item['tanggal_kunjungan'].toString());
+          }
           bool isSelesai = statusRaw.toLowerCase() == 'selesai';
+
+          if (tglKunjungan != null && statusRaw.toLowerCase() == 'aktif') {
+            final now = DateTime.now();
+            final hariIni = DateTime(now.year, now.month, now.day);
+            if (tglKunjungan.isBefore(hariIni)) {
+              isSelesai = true;
+              statusRaw = 'Selesai'; 
+            }
+          }
+
           String deskripsi =
               item['deskripsi']?.toString() ??
               'Saksikan keindahan seni ${item['judul_pagelaran'] ?? 'budaya'} klasik gaya Yogyakarta.';
 
-          // Ambil jumlah tiket dari database
           final jumlahRaw = item['jumlah_tiket'];
           final jumlahTiket = (jumlahRaw is int)
               ? jumlahRaw
@@ -99,7 +119,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             imageAsset: '',
             iconBgColor: const Color(0xFF0B3D2E),
             description: deskripsi,
-            ticketCount: jumlahTiket, // <-- Masukin jumlah tiket ke model
+            ticketCount: jumlahTiket, 
           );
         }).toList();
 
@@ -343,6 +363,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
               padding: const EdgeInsets.all(24.0),
               child: Column(
                 children: [
+                  // ==========================================
+                  // HEADER DENGAN TOMBOL SIMULASI (kDebugMode)
+                  // ==========================================
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -354,32 +377,84 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           color: Color(0xFF0B3D2E),
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () => setState(() {
-                          isSearchActive = !isSearchActive;
-                          if (!isSearchActive) {
-                            searchQuery = '';
-                            searchController.clear();
-                          }
-                        }),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black12,
-                                blurRadius: 4,
-                                offset: Offset(0, 2),
+                      Row(
+                        children: [
+                          // TOMBOL SIMULASI DOSEN
+                          if (kDebugMode) ...[
+                            GestureDetector(
+                              onTap: () async {
+                                bool? yakin = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Simulasi Dosen'),
+                                    content: const Text('Ubah semua tiket Aktif menjadi Selesai?\n(Fitur ini hanya muncul saat development)'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, false),
+                                        child: const Text('Batal'),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () => Navigator.pop(context, true),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                        child: const Text('Ya, Simulasi'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (yakin == true) {
+                                  final email = await DBHelper().getSesi();
+                                  if (email != null) {
+                                    await SupabaseService().simulasiTiketSelesai(email);
+                                    _loadTiketDariDatabase(); // Refresh data
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Simulasi berhasil! Semua tiket aktif jadi Selesai.')),
+                                      );
+                                    }
+                                  }
+                                }
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.all(8),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFADBD8), 
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.bug_report, color: Color(0xFFC0392B)),
                               ),
-                            ],
+                            ),
+                          ],
+                          // TOMBOL SEARCH
+                          GestureDetector(
+                            onTap: () => setState(() {
+                              isSearchActive = !isSearchActive;
+                              if (!isSearchActive) {
+                                searchQuery = '';
+                                searchController.clear();
+                              }
+                            }),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black12,
+                                    blurRadius: 4,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.search,
+                                color: Colors.black87,
+                              ),
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.search,
-                            color: Colors.black87,
-                          ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -731,9 +806,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   '',
                                 ),
                                 time: '09:00 - 11:00',
-                                kodeBooking: ticket.bookingCode, // <-- Kirim kode booking induk
-                                ticketCount: ticket
-                                    .ticketCount, // <-- Kirim jumlah tiketnya
+                                kodeBooking: ticket.bookingCode,
+                                ticketCount: ticket.ticketCount,
                                 imageAsset: gambarPath,
                               ),
                             ),

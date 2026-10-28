@@ -1,9 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart'; 
 
 import 'dart:convert';
-
 import 'dart:io';
 
 import 'hash_helper.dart';
@@ -197,6 +197,47 @@ class SupabaseService {
     }
   }
 
+  // FUNGSI UNTUK DEMO DOSEN: Ubah semua tiket aktif jadi Selesai
+  Future<void> simulasiTiketSelesai(String email) async {
+    try {
+      await _client
+          .from('tiket')
+          .update({'status': 'Selesai'})
+          .eq('user_email', email)
+          .eq('status', 'Aktif');
+    } catch (e) {
+      throw Exception('Gagal simulasi tiket: $e');
+    }
+  }
+
+  Future<void> cekDanUpdateTiketSelesai(String email) async {
+    try {
+      final dataTiket = await getHistoryTiket(email);
+      final now = DateTime.now();
+      final hariIni = DateTime(now.year, now.month, now.day); 
+
+      for (var tiket in dataTiket) {
+        final status = tiket['status']?.toString().toLowerCase() ?? 'aktif';
+        final tanggalStr = tiket['tanggal_kunjungan']?.toString();
+
+        if (status == 'aktif' && tanggalStr != null) {
+          final tanggalKunjungan = DateTime.parse(tanggalStr);
+          
+          if (tanggalKunjungan.isBefore(hariIni)) {
+            await _client
+                .from('tiket')
+                .update({'status': 'Selesai'})
+                .eq('id', tiket['id']);
+            
+            debugPrint("Tiket ${tiket['id']} otomatis diupdate jadi Selesai.");
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Gagal update status tiket otomatis: $e");
+    }
+  }
+
   Future<void> createUlasan({
     required String userEmail,
     required String judulPagelaran,
@@ -248,7 +289,7 @@ class SupabaseService {
           'Authorization': 'Bearer $_groqApiKey',
         },
         body: jsonEncode({
-          'model': 'openai/gpt-oss-120b', // Model AI Groq
+          'model': 'openai/gpt-oss-120b', 
           'messages': [
             {
               'role': 'system',
