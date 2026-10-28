@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:http/http.dart' as http;
+
+import 'dart:convert';
 
 import '../services/supabase_service.dart';
 
@@ -17,31 +19,25 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
 
-  static const String _apiKey = String.fromEnvironment('ISI SENDIRI');
+  static const String _groqApiKey = 'ISI_API_DI_SINI';
 
-  late GenerativeModel _model;
-  late ChatSession _chat;
+  final List<Map<String, String>> _chatHistory = [
+    {
+      'role': 'system',
+      'content':
+          'Kamu adalah "Srimanganti AI", teman ngobrol Gen Z yang chill, asik, dan ga kaku dari aplikasi Keraton Yogyakarta. '
+          'ATURAN KETAT: '
+          '1. WAJIB pakai bahasa Indonesia santai. Panggil "aku" dan "kamu". '
+          '2. JANGAN kaku. Boleh sesekali pakai kata "gas", "nih", "banget", "sih", atau emoji dikit. '
+          '3. WAJIB BACA DATA: Kamu akan selalu diberikan data jadwal dari database beserta informasi hari ini. Jika user tanya jadwal/harga, HARUS jawab sesuai data yang dikasih. '
+          '4. Jam semua pementasan adalah 09.00 - 11.00 WIB. '
+          '5. Kalau user nanya di luar topik, balikin ke topik tiket/pentas dengan santai.',
+    },
+  ];
 
   @override
   void initState() {
     super.initState();
-
-    _model = GenerativeModel(
-      model: 'gemini-3.5-flash',
-      apiKey: _apiKey,
-      systemInstruction: Content.system(
-        'Kamu adalah "Srimanganti AI", teman ngobrol Gen Z yang chill, asik, dan ga kaku dari aplikasi Keraton Yogyakarta. '
-        'ATURAN KETAT: '
-        '1. WAJIB pakai bahasa Indonesia santai. Panggil "aku" dan "kamu". '
-        '2. JANGAN kaku. Boleh sesekali pakai kata "gas", "nih", "banget", "sih", atau emoji dikit. '
-        '3. WAJIB BACA DATA: Kamu akan selalu diberikan data jadwal dari database. Jika user tanya jadwal/harga, HARUS jawab sesuai data yang dikasih. '
-        '4. Jam semua pementasan adalah 09.00 - 11.00 WIB. '
-        '5. Kalau user nanya di luar topik, balikin ke topik tiket/pentas dengan santai.',
-      ),
-    );
-
-    _chat = _model.startChat();
-
     _messages.add({
       'isUser': false,
       'text': 'Sugeng rawuh! 👋 Aku Srimanganti AI. Mau tanya **jadwal pentas**, **harga tiket**, atau info seru soal Keraton? Gas aja tanya apa aja ya!',
@@ -68,40 +64,81 @@ class _ChatScreenState extends State<ChatScreen> {
           konteksDatabase += "Data kosong.\n";
         } else {
           for (var p in pagelaran) {
-            konteksDatabase += "- ${p['judul']} | Hari: ${p['hari']} | 09.00-11.00 WIB | WNI: Rp ${p['harga_wni']} | WNA: Rp ${p['harga_wna']}\n";
+            konteksDatabase +=
+                "- ${p['judul']} | Hari: ${p['hari']} | 09.00-11.00 WIB | WNI: Rp ${p['harga_wni']} | WNA: Rp ${p['harga_wna']}\n";
           }
         }
       } catch (e) {
         konteksDatabase += "Gagal load database.\n";
       }
 
+      final now = DateTime.now();
+      // Daftar nama hari dalam bahasa Indonesia (1 = Senin, 7 = Minggu)
+      const listHari = [
+        'Senin',
+        'Selasa',
+        'Rabu',
+        'Kamis',
+        'Jumat',
+        'Sabtu',
+        'Minggu',
+      ];
+      final hariIni = listHari[now.weekday - 1];
+      final tanggalIni = "${now.day}-${now.month}-${now.year}";
+
       final promptLengkap =
           """
-DATA JADWAL:
+INFORMASI HARI INI: Hari $hariIni, tanggal $tanggalIni.
+
+DATA JADWAL KERATON DARI DATABASE:
 $konteksDatabase
 
 PERTANYAAN USER: "$text"
 
-Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan ngarang!
+ATURAN JAWAB:
+1. Jawab dengan gaya Gen Z yang asik.
+2. Jika user tanya jadwal "hari ini", COCOKKAN dengan INFORMASI HARI INI di atas, lalu cari jadwal yang harinya sama di DATA JADWAL KERATON.
+3. Jika user tanya jadwal/harga, cari di data. Jangan ngarang!
 """;
 
-      final response = await _chat.sendMessage(Content.text(promptLengkap));
+      // Masukkan pesan user ke history
+      _chatHistory.add({'role': 'user', 'content': promptLengkap});
+
+      final response = await http.post(
+        Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_groqApiKey',
+        },
+        body: jsonEncode({
+          'model': 'openai/gpt-oss-120b',
+          'messages': _chatHistory,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final botReply = data['choices'][0]['message']['content'];
+
+        // Masukkan balasan bot ke history biar nyambung
+        _chatHistory.add({'role': 'assistant', 'content': botReply});
+
+        if (!mounted) return;
+        setState(() {
+          _messages.add({'isUser': false, 'text': botReply});
+          _isLoading = false;
+        });
+      } else {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+    } catch (e) {
+      print("================ ERROR GROQ ================");
+      print(e.toString());
+      print("============================================");
 
       if (!mounted) return;
       setState(() {
-        _messages.add({
-          'isUser': false,
-          'text': response.text ?? 'Haduh, otakku nge-hang. Coba tanya lagi yuk!',
-        });
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _messages.add({
-          'isUser': false,
-          'text': 'Yah, koneksinya ngadat nih. Coba bentar lagi ya. ($e)',
-        });
+        _messages.add({'isUser': false, 'text': '❌ **Error Sistem:**\n\n$e'});
         _isLoading = false;
       });
     }
@@ -130,8 +167,7 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Kita pindahkan warna background ke dalam Stack
-      backgroundColor: Colors.white, 
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A3C34),
         foregroundColor: Colors.white,
@@ -147,12 +183,18 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Srimanganti AI', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(
+                  'Srimanganti AI',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
                 Row(
                   children: [
                     Icon(Icons.circle, color: Colors.greenAccent, size: 8),
                     SizedBox(width: 4),
-                    Text('Online nih 👋', style: TextStyle(fontSize: 11, color: Colors.greenAccent)),
+                    Text(
+                      'Online nih 👋',
+                      style: TextStyle(fontSize: 11, color: Colors.greenAccent),
+                    ),
                   ],
                 ),
               ],
@@ -162,34 +204,23 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
       ),
       body: SafeArea(
         bottom: false,
-        // ==========================================
-        // TAMBAHKAN STACK UNTUK BACKGROUND GAMBAR
-        // ==========================================
         child: Stack(
           children: [
-            // 1. Gambar Background
             Positioned.fill(
-              child: Image.asset(
-                'assets/bg_chat.png', // Pastikan nama file & ekstensinya sesuai
-                fit: BoxFit.cover,
-              ),
+              child: Image.asset('assets/bg_chat.png', fit: BoxFit.cover),
             ),
-            
-            // 2. Overlay Gelap Tipis (Opsional, biar teks makin kebaca)
-            // Hapus Container ini kalau menurutmu background-nya udah cukup gelap
             Positioned.fill(
-              child: Container(
-                color: Colors.black.withOpacity(0.1),
-              ),
+              child: Container(color: Colors.black.withOpacity(0.1)),
             ),
-
-            // 3. Konten Chat (Column)
             Column(
               children: [
                 Expanded(
                   child: ListView.builder(
                     controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 20,
+                    ),
                     itemCount: _messages.length + (_isLoading ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index == _messages.length && _isLoading) {
@@ -203,15 +234,22 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
                     },
                   ),
                 ),
-
-                // INPUT CHAT
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    border: const Border(top: BorderSide(color: Color(0xFFEADFCB))),
+                    border: const Border(
+                      top: BorderSide(color: Color(0xFFEADFCB)),
+                    ),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -4))
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -4),
+                      ),
                     ],
                   ),
                   child: Row(
@@ -229,8 +267,14 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
                             onSubmitted: (_) => _kirimPesan(),
                             decoration: const InputDecoration(
                               hintText: 'Ketik pesan...',
-                              hintStyle: TextStyle(color: Color(0xFF9AA6A2), fontSize: 14),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                              hintStyle: TextStyle(
+                                color: Color(0xFF9AA6A2),
+                                fontSize: 14,
+                              ),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 14,
+                              ),
                               border: InputBorder.none,
                             ),
                           ),
@@ -238,10 +282,16 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
                       ),
                       const SizedBox(width: 10),
                       CircleAvatar(
-                        backgroundColor: _isLoading ? const Color(0xFF9AA6A2) : const Color(0xFF1A3C34),
+                        backgroundColor: _isLoading
+                            ? const Color(0xFF9AA6A2)
+                            : const Color(0xFF1A3C34),
                         radius: 22,
                         child: IconButton(
-                          icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                          icon: const Icon(
+                            Icons.send_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                           onPressed: _isLoading ? null : _kirimPesan,
                         ),
                       ),
@@ -256,14 +306,13 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
     );
   }
 
-  // ==========================================
-  // WIDGET BUBBLE CHAT
-  // ==========================================
   Widget _buildChatBubble(String text, bool isUser) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser) ...[
@@ -274,26 +323,26 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
             ),
             const SizedBox(width: 8),
           ],
-
           Flexible(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                // BUBBLE BOT DIBIKIN PUTIH SOLID BIAR KEBACA DI ATAS BACKGROUND
-                color: isUser ? const Color(0xFF1A3C34) : Colors.white, 
+                color: isUser ? const Color(0xFF1A3C34) : Colors.white,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(20),
                   topRight: const Radius.circular(20),
                   bottomLeft: isUser ? const Radius.circular(20) : Radius.zero,
                   bottomRight: isUser ? Radius.zero : const Radius.circular(20),
                 ),
-                border: isUser ? null : Border.all(color: const Color(0xFFEADFCB)),
+                border: isUser
+                    ? null
+                    : Border.all(color: const Color(0xFFEADFCB)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08), // Shadow agak tebel biar nge-pop
+                    color: Colors.black.withOpacity(0.08),
                     blurRadius: 8,
                     offset: const Offset(0, 3),
-                  )
+                  ),
                 ],
               ),
               child: MarkdownBody(
@@ -306,7 +355,9 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
                   ),
                   strong: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: isUser ? const Color(0xFFE6D5B8) : const Color(0xFF1A3C34),
+                    color: isUser
+                        ? const Color(0xFFE6D5B8)
+                        : const Color(0xFF1A3C34),
                   ),
                   listBullet: TextStyle(
                     color: isUser ? Colors.white : Colors.black87,
@@ -315,13 +366,19 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
               ),
             ),
           ),
-
           if (isUser) ...[
             const SizedBox(width: 8),
             const CircleAvatar(
               backgroundColor: Color(0xFF1A3C34),
               radius: 16,
-              child: Text('U', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              child: Text(
+                'U',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ],
@@ -329,9 +386,6 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
     );
   }
 
-  // ==========================================
-  // WIDGET TYPING INDICATOR
-  // ==========================================
   Widget _buildTypingIndicator() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -348,7 +402,7 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: Colors.white, // Tetap putih
+              color: Colors.white,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
@@ -382,7 +436,11 @@ Jawab dengan gaya Gen Z. Jika tanya jadwal/harga, cari di data di atas. Jangan n
           width: 7,
           height: 7,
           decoration: BoxDecoration(
-            color: Color.lerp(const Color(0xFF9AA6A2), const Color(0xFF1A3C34), value),
+            color: Color.lerp(
+              const Color(0xFF9AA6A2),
+              const Color(0xFF1A3C34),
+              value,
+            ),
             shape: BoxShape.circle,
           ),
         );
