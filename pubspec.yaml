@@ -36,6 +36,7 @@ dependencies:
   flutter_dotenv: ^6.0.1
   sensors_plus: ^7.1.1
   qr_flutter: ^4.1.0
+  flutter_markdown: ^0.7.3
   
 
 dev_dependencies:

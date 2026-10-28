@@ -172,7 +172,7 @@ class SupabaseService {
       final ulasanData = await getUlasan(judulPagelaran);
       if (ulasanData.isEmpty) return "Belum ada ulasan untuk pagelaran ini.";
       String semuaUlasan = ulasanData.map((u) => "- ${u['teks_ulasan']}").join("\n");
-      final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: 'ISI_API_KEY_GEMINI_KAMU_DI_SINI');
+      final model = GenerativeModel(model: 'gemini-3.5-flash', apiKey: 'ISI SENDIRI');
       final prompt = 'Berikan ringkasan singkat (maksimal 3 kalimat) dalam bahasa Indonesia yang ramah dan menarik dari ulasan penonton pagelaran "$judulPagelaran" berikut ini:\n\n$semuaUlasan';
       final response = await model.generateContent([Content.text(prompt)]);
       return response.text ?? "Gagal membuat ringkasan.";
