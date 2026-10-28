@@ -11,7 +11,7 @@ class MinigameScreen extends StatefulWidget {
   State<MinigameScreen> createState() => _MinigameScreenState();
 }
 
-class _MinigameScreenState extends State<MinigameScreen> {
+class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStateMixin {
   final List<Map<String, dynamic>> levels = [
     {'level': 1, 'cards': 6, 'time': 30},
     {'level': 2, 'cards': 12, 'time': 45},
@@ -40,9 +40,22 @@ class _MinigameScreenState extends State<MinigameScreen> {
   int countdownValue = 3;
   Timer? countdownTimer;
 
+  late AnimationController _shuffleController;
+  late Animation<double> _shuffleScale;
+
   @override
   void initState() {
     super.initState();
+    
+    _shuffleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    
+    _shuffleScale = Tween<double>(begin: 1.0, end: 0.1).animate(
+      CurvedAnimation(parent: _shuffleController, curve: Curves.easeInOut),
+    );
+
     startCountdown(0);
   }
 
@@ -80,25 +93,45 @@ class _MinigameScreenState extends State<MinigameScreen> {
     });
   }
 
-  void startLevel(int levelIndex) {
+  Future<void> startLevel(int levelIndex) async {
+    int numCards = levels[levelIndex]['cards'];
+    timeLeft = levels[levelIndex]['time'];
+
+    int pairs = numCards ~/ 2;
+    List<String> selectedImages = allImages.take(pairs).toList();
+    List<String> tempCards = [...selectedImages, ...selectedImages];
+    tempCards.shuffle(Random());
+
+    // 1. TAMPILKAN GAMBAR DEPAN
     setState(() {
       currentLevelIndex = levelIndex;
       firstCardIndex = null;
       matchedPairs = 0;
       isGameOver = false;
       isLevelComplete = false;
-      lockBoard = false;
+      lockBoard = true;
       
-      int numCards = levels[levelIndex]['cards'];
-      timeLeft = levels[levelIndex]['time'];
-
-      int pairs = numCards ~/ 2;
-      List<String> selectedImages = allImages.take(pairs).toList();
-      currentCards = [...selectedImages, ...selectedImages];
-      currentCards.shuffle(Random());
-
-      cardFlipped = List.generate(numCards, (index) => false);
+      currentCards = tempCards;
+      cardFlipped = List.generate(numCards, (index) => true); // Kebuka semua
       cardMatched = List.generate(numCards, (index) => false);
+    });
+
+    // Tahan 1.2 detik
+    await Future.delayed(const Duration(milliseconds: 1200));
+
+    // 2. ANIMASI SHUFFLE
+    await _shuffleController.forward(); // Ngecil
+    
+    setState(() {
+      cardFlipped = List.generate(numCards, (index) => false); // Tutup semua (jadi logo)
+      currentCards.shuffle(Random()); // Acak posisi
+    });
+
+    await _shuffleController.reverse(); // Membesar
+
+    // 3. MULAI GAME
+    setState(() {
+      lockBoard = false;
     });
 
     startTimer();
@@ -118,22 +151,31 @@ class _MinigameScreenState extends State<MinigameScreen> {
 
   void onCardTap(int index) {
     if (lockBoard || cardFlipped[index] || cardMatched[index] || isCountdown) return;
-    setState(() => cardFlipped[index] = true);
+
+    setState(() {
+      cardFlipped[index] = true;
+    });
+
     if (firstCardIndex == null) {
       firstCardIndex = index;
     } else {
       lockBoard = true;
+      
       if (currentCards[firstCardIndex!] == currentCards[index]) {
-        setState(() {
-          cardMatched[firstCardIndex!] = true;
-          cardMatched[index] = true;
-          firstCardIndex = null;
-          matchedPairs++;
-          lockBoard = false;
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (!mounted) return;
+          setState(() {
+            cardMatched[firstCardIndex!] = true;
+            cardMatched[index] = true;
+            firstCardIndex = null;
+            matchedPairs++;
+            lockBoard = false;
+          });
+          checkWinCondition();
         });
-        checkWinCondition();
       } else {
         Future.delayed(const Duration(milliseconds: 800), () {
+          if (!mounted) return;
           setState(() {
             cardFlipped[firstCardIndex!] = false;
             cardFlipped[index] = false;
@@ -165,6 +207,7 @@ class _MinigameScreenState extends State<MinigameScreen> {
   void dispose() {
     timer?.cancel();
     countdownTimer?.cancel();
+    _shuffleController.dispose();
     super.dispose();
   }
 
@@ -176,9 +219,7 @@ class _MinigameScreenState extends State<MinigameScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // ==========================================
-          // 1. BACKGROUND KERATON (DARI FOLDER ASSETS)
-          // ==========================================
+          // BACKGROUND
           Positioned.fill(
             child: Image.asset(
               'assets/bg_minigame.png',
@@ -188,15 +229,9 @@ class _MinigameScreenState extends State<MinigameScreen> {
               },
             ),
           ),
-          
-          // Overlay gelap transparan
-          Container(
-            color: Colors.black.withOpacity(0.15),
-          ),
+          Container(color: Colors.black.withOpacity(0.15)),
 
-          // ==========================================
-          // 2. KONTEN UTAMA
-          // ==========================================
+          // KONTEN UTAMA
           SafeArea(
             child: Column(
               children: [
@@ -257,90 +292,72 @@ class _MinigameScreenState extends State<MinigameScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
-                // GRID KARTU (DI TENGAH)
+                // AREA KARTU (TENGAH)
                 Expanded(
                   child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 340),
-                      child: GridView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          crossAxisSpacing: 14,
-                          mainAxisSpacing: 14,
-                          childAspectRatio: 1.0,
-                        ),
-                        itemCount: numCards,
-                        itemBuilder: (context, index) {
-                          if (currentCards.isEmpty) return const SizedBox();
-                          bool isFlipped = cardFlipped[index] || cardMatched[index];
-                          
-                          return GestureDetector(
-                            onTap: () => onCardTap(index),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              decoration: BoxDecoration(
-                                color: isFlipped ? Colors.white : const Color(0xFF5D4037),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: isFlipped 
-                                    ? (cardMatched[index] ? Colors.green : const Color(0xFFE6D5B8))
-                                    : const Color(0xFFD4AF37),
-                                  width: 2,
+                    child: Transform.translate(
+                      offset: const Offset(0, -10),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 340),
+                        child: AnimatedBuilder(
+                          animation: _shuffleController,
+                          builder: (context, child) {
+                            return Transform.scale(
+                              scale: _shuffleScale.value,
+                              child: GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                padding: const EdgeInsets.symmetric(horizontal: 24),
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: crossAxisCount,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 1.0,
                                 ),
-                                boxShadow: const [
-                                  BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 4))
-                                ],
+                                itemCount: numCards,
+                                itemBuilder: (context, index) {
+                                  if (currentCards.isEmpty) return const SizedBox();
+                                  bool isFlipped = cardFlipped[index] || cardMatched[index];
+                                  return _buildAnimatedCard(index, isFlipped);
+                                },
                               ),
-                              child: isFlipped 
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(14),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Image.asset(currentCards[index], fit: BoxFit.contain),
-                                      ),
-                                    )
-                                  : const Center(
-                                      child: Text(
-                                        '❁', 
-                                        style: TextStyle(fontSize: 30, color: Color(0xFFD4AF37)),
-                                      ),
-                                    ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
                 ),
 
                 // TOMBOL NEXT LEVEL
-                if (isLevelComplete)
-                  Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: () => startCountdown(currentLevelIndex + 1),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0B3D2E), 
-                          foregroundColor: Colors.white, 
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
-                        ),
-                        child: const Text('Lanjut ke Level Berikutnya →', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ),
+                SizedBox(
+                  height: 90, 
+                  child: isLevelComplete 
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed: () => startCountdown(currentLevelIndex + 1),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0B3D2E), 
+                                foregroundColor: Colors.white, 
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
+                              ),
+                              child: const Text('Lanjut ke Level Berikutnya →', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        )
+                      : const SizedBox(), 
+                ),
               ],
             ),
           ),
 
-          // ==========================================
-          // 3. OVERLAY COUNTDOWN
-          // ==========================================
+          // OVERLAY COUNTDOWN
           if (isCountdown)
             BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
@@ -361,9 +378,7 @@ class _MinigameScreenState extends State<MinigameScreen> {
               ),
             ),
 
-          // ==========================================
-          // 4. OVERLAY MENANG
-          // ==========================================
+          // OVERLAY MENANG
           if (isGameOver)
             Container(
               color: const Color(0xFF0B3D2E),
@@ -417,6 +432,70 @@ class _MinigameScreenState extends State<MinigameScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAnimatedCard(int index, bool isFlipped) {
+    return GestureDetector(
+      onTap: () => onCardTap(index),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: isFlipped ? 0.0 : 1.0, end: isFlipped ? 1.0 : 0.0),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+        builder: (context, value, child) {
+          final isFront = value > 0.5; 
+          final rotationAngle = value * pi;
+          final transform = Matrix4.identity()
+            ..setEntry(3, 2, 0.001) 
+            ..rotateY(rotationAngle);
+
+          return Transform(
+            transform: transform,
+            alignment: Alignment.center,
+            child: Container(
+              decoration: BoxDecoration(
+                color: isFront ? Colors.white : const Color(0xFF5D4037),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isFront 
+                      ? (cardMatched[index] ? Colors.green : const Color(0xFFE6D5B8))
+                      : const Color(0xFFD4AF37), 
+                  width: 2,
+                ),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 4))
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: isFront 
+                    // DEPAN: KAYAK AWAL (BoxFit.contain & padding)
+                    ? Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Image.asset(
+                          currentCards[index], 
+                          fit: BoxFit.contain, // <-- KEMBALI KE CONTAIN
+                        ),
+                      )
+                    // BELAKANG: FULLIN (BoxFit.cover)
+                    : Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.identity()..rotateY(pi), 
+                        child: Image.asset(
+                          'assets/logo.png', 
+                          fit: BoxFit.cover, // <-- BELAKANG DI-FULL-IN
+                          width: double.infinity,
+                          height: double.infinity,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(Icons.lock_outline, color: Color(0xFFD4AF37), size: 30);
+                          },
+                        ),
+                      ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
