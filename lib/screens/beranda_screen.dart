@@ -4,12 +4,14 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'minigame_screen.dart';
 import 'detail_tiket.dart';
 import '../services/db_helper.dart';
+import '../services/location_service.dart';
 import '../services/supabase_service.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -881,14 +883,70 @@ class _ShowCarousel extends StatelessWidget {
   }
 }
 
-/* ---------------- PLACE CARD (PETA INTERAKTIF) ---------------- */
-class _PlaceCard extends StatelessWidget {
+/* ---------------- PLACE CARD (PETA INTERAKTIF + LBS) ---------------- */
+class _PlaceCard extends StatefulWidget {
   final double mapHeight;
 
   const _PlaceCard({required this.mapHeight});
 
-  // Koordinat perkiraan, cek lagi di Google Maps lalu sesuaikan
+  @override
+  State<_PlaceCard> createState() => _PlaceCardState();
+}
+
+class _PlaceCardState extends State<_PlaceCard> {
+  // Koordinat Bangsal Srimanganti
   static const LatLng _lokasi = LatLng(-7.8053, 110.3642);
+
+  final MapController _mapController = MapController();
+
+  // State LBS
+  Position? _currentPosition;
+  double? _distanceMeters;
+  bool _isLoadingLocation = false;
+  String? _errorMessage;
+
+  Future<void> _cekLokasiSaya() async {
+    setState(() {
+      _isLoadingLocation = true;
+      _errorMessage = null;
+    });
+
+    final result = await LocationService.getCurrentPosition();
+
+    if (!mounted) return;
+
+    if (result.position == null) {
+      setState(() {
+        _isLoadingLocation = false;
+        _errorMessage = result.error ?? 'Gagal mengambil lokasi.';
+      });
+      return;
+    }
+
+    final pos = result.position!;
+    final distance = LocationService.distanceToBangsal(pos);
+
+    setState(() {
+      _currentPosition = pos;
+      _distanceMeters = distance;
+      _isLoadingLocation = false;
+    });
+
+    // Auto-zoom supaya marker user + Bangsal kelihatan bareng
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final userLatLng = LatLng(pos.latitude, pos.longitude);
+        final bounds = LatLngBounds.fromPoints([userLatLng, _lokasi]);
+        _mapController.fitCamera(
+          CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(60)),
+        );
+      } catch (e) {
+        debugPrint("Gagal fit camera: $e");
+      }
+    });
+  }
+
+  bool get _isNear => _distanceMeters != null && _distanceMeters! < 150;
 
   @override
   Widget build(BuildContext context) {
@@ -902,9 +960,10 @@ class _PlaceCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            height: mapHeight,
+            height: widget.mapHeight,
             width: double.infinity,
             child: FlutterMap(
+              mapController: _mapController,
               options: const MapOptions(
                 initialCenter: _lokasi,
                 initialZoom: 17,
@@ -922,6 +981,7 @@ class _PlaceCard extends StatelessWidget {
                 ),
                 MarkerLayer(
                   markers: [
+                    // Marker Bangsal Srimanganti
                     Marker(
                       point: _lokasi,
                       width: 150,
@@ -967,6 +1027,35 @@ class _PlaceCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                    // Marker posisi user (kalau sudah di-cek)
+                    if (_currentPosition != null)
+                      Marker(
+                        point: LatLng(
+                          _currentPosition!.latitude,
+                          _currentPosition!.longitude,
+                        ),
+                        width: 34,
+                        height: 34,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.blue,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withValues(alpha: 0.4),
+                                blurRadius: 8,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.my_location,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
                 const RichAttributionWidget(
@@ -999,6 +1088,119 @@ class _PlaceCard extends StatelessWidget {
                     height: 1.5,
                   ),
                 ),
+                const SizedBox(height: 12),
+
+                // ========== LBS SECTION ==========
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _isNear ? const Color(0xFFE3F0E5) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isNear
+                          ? const Color(0xFF1E5631)
+                          : const Color(0xFFEADFCB),
+                      width: _isNear ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.my_location,
+                            size: 16,
+                            color: _isNear
+                                ? const Color(0xFF1E5631)
+                                : const Color(0xFF1A3C34),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Cek Jarak ke Bangsal',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1A3C34),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      if (_errorMessage != null) ...[
+                        Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFFC0392B),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+
+                      if (_currentPosition != null) ...[
+                        Text(
+                          'Posisi kamu: ${_currentPosition!.latitude.toStringAsFixed(5)}, ${_currentPosition!.longitude.toStringAsFixed(5)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF6B7A75),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Jarak ke Bangsal: ${LocationService.formatDistance(_distanceMeters!)}'
+                          '${_isNear ? '  ✅ Kamu dekat sini!' : ''}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: _isNear
+                                ? const Color(0xFF1E5631)
+                                : const Color(0xFF1A3C34),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoadingLocation ? null : _cekLokasiSaya,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A3C34),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: _isLoadingLocation
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.gps_fixed, size: 16),
+                          label: Text(
+                            _isLoadingLocation
+                                ? 'Mencari lokasi...'
+                                : 'Cek Jarak Saya',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // ========== END LBS SECTION ==========
+
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,

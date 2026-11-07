@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart'; 
+import 'package:flutter/foundation.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -214,7 +214,7 @@ class SupabaseService {
     try {
       final dataTiket = await getHistoryTiket(email);
       final now = DateTime.now();
-      final hariIni = DateTime(now.year, now.month, now.day); 
+      final hariIni = DateTime(now.year, now.month, now.day);
 
       for (var tiket in dataTiket) {
         final status = tiket['status']?.toString().toLowerCase() ?? 'aktif';
@@ -222,13 +222,13 @@ class SupabaseService {
 
         if (status == 'aktif' && tanggalStr != null) {
           final tanggalKunjungan = DateTime.parse(tanggalStr);
-          
+
           if (tanggalKunjungan.isBefore(hariIni)) {
             await _client
                 .from('tiket')
                 .update({'status': 'Selesai'})
                 .eq('id', tiket['id']);
-            
+
             debugPrint("Tiket ${tiket['id']} otomatis diupdate jadi Selesai.");
           }
         }
@@ -289,7 +289,7 @@ class SupabaseService {
           'Authorization': 'Bearer $_groqApiKey',
         },
         body: jsonEncode({
-          'model': 'openai/gpt-oss-120b', 
+          'model': 'openai/gpt-oss-120b',
           'messages': [
             {
               'role': 'system',
