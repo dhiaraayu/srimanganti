@@ -675,5 +675,4 @@ const String contractAbi = '''
 ]
 ''';
 
-// Ganti dengan alamat kontrak yang kamu dapat dari Remix
-const String contractAddress = 'ISI SENDIRI';
+const String contractAddress = 'ISI KONTRAK REMIX';

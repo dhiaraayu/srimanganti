@@ -11,7 +11,7 @@ import 'hash_helper.dart';
 class SupabaseService {
   final SupabaseClient _client = Supabase.instance.client;
 
-  static const String _groqApiKey = 'ISI_API_DI_SINI';
+  static const String _groqApiKey = 'ISI SENDIRI';
 
   Future<bool> isEmailRegistered(String email) async {
     try {

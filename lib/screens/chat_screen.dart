@@ -19,7 +19,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
 
-  static const String _groqApiKey = 'ISI_API_DI_SINI';
+  static const String _groqApiKey = 'ISI SENDIRI';
 
   final List<Map<String, String>> _chatHistory = [
     {

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'dart:async';
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 class MinigameScreen extends StatefulWidget {
   const MinigameScreen({Key? key}) : super(key: key);
@@ -43,6 +44,9 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
   late AnimationController _shuffleController;
   late Animation<double> _shuffleScale;
 
+  StreamSubscription<AccelerometerEvent>? _gyroSubscription;
+  double _tiltX = 0.0; 
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +59,16 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
     _shuffleScale = Tween<double>(begin: 1.0, end: 0.1).animate(
       CurvedAnimation(parent: _shuffleController, curve: Curves.easeInOut),
     );
+
+
+    _gyroSubscription = accelerometerEventStream().listen((AccelerometerEvent event) {
+      if (mounted) {
+        setState(() {
+          // event.x mendeteksi kemiringan kiri (-) atau kanan (+)
+          _tiltX = event.x; 
+        });
+      }
+    });
 
     startCountdown(0);
   }
@@ -102,7 +116,6 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
     List<String> tempCards = [...selectedImages, ...selectedImages];
     tempCards.shuffle(Random());
 
-    // 1. TAMPILKAN GAMBAR DEPAN
     setState(() {
       currentLevelIndex = levelIndex;
       firstCardIndex = null;
@@ -112,24 +125,21 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
       lockBoard = true;
       
       currentCards = tempCards;
-      cardFlipped = List.generate(numCards, (index) => true); // Kebuka semua
+      cardFlipped = List.generate(numCards, (index) => true); 
       cardMatched = List.generate(numCards, (index) => false);
     });
 
-    // Tahan 1.2 detik
     await Future.delayed(const Duration(milliseconds: 1200));
 
-    // 2. ANIMASI SHUFFLE
-    await _shuffleController.forward(); // Ngecil
+    await _shuffleController.forward(); 
     
     setState(() {
-      cardFlipped = List.generate(numCards, (index) => false); // Tutup semua (jadi logo)
-      currentCards.shuffle(Random()); // Acak posisi
+      cardFlipped = List.generate(numCards, (index) => false); 
+      currentCards.shuffle(Random()); 
     });
 
-    await _shuffleController.reverse(); // Membesar
+    await _shuffleController.reverse(); 
 
-    // 3. MULAI GAME
     setState(() {
       lockBoard = false;
     });
@@ -208,6 +218,7 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
     timer?.cancel();
     countdownTimer?.cancel();
     _shuffleController.dispose();
+    _gyroSubscription?.cancel();
     super.dispose();
   }
 
@@ -294,7 +305,7 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
 
                 const SizedBox(height: 10),
 
-                // AREA KARTU (TENGAH)
+                // AREA KARTU (TENGAH) DENGAN SENSOR GYRO
                 Expanded(
                   child: Center(
                     child: Transform.translate(
@@ -306,22 +317,27 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
                           builder: (context, child) {
                             return Transform.scale(
                               scale: _shuffleScale.value,
-                              child: GridView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                padding: const EdgeInsets.symmetric(horizontal: 24),
-                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: crossAxisCount,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
-                                  childAspectRatio: 1.0,
+
+
+                              child: Transform.rotate(
+                                angle: _tiltX * 0.05, 
+                                child: GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: crossAxisCount,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 12,
+                                    childAspectRatio: 1.0,
+                                  ),
+                                  itemCount: numCards,
+                                  itemBuilder: (context, index) {
+                                    if (currentCards.isEmpty) return const SizedBox();
+                                    bool isFlipped = cardFlipped[index] || cardMatched[index];
+                                    return _buildAnimatedCard(index, isFlipped);
+                                  },
                                 ),
-                                itemCount: numCards,
-                                itemBuilder: (context, index) {
-                                  if (currentCards.isEmpty) return const SizedBox();
-                                  bool isFlipped = cardFlipped[index] || cardMatched[index];
-                                  return _buildAnimatedCard(index, isFlipped);
-                                },
                               ),
                             );
                           },
@@ -378,7 +394,6 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
               ),
             ),
 
-          // OVERLAY MENANG
           if (isGameOver)
             Container(
               color: const Color(0xFF0B3D2E),
@@ -470,21 +485,19 @@ class _MinigameScreenState extends State<MinigameScreen> with TickerProviderStat
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
                 child: isFront 
-                    // DEPAN: KAYAK AWAL (BoxFit.contain & padding)
                     ? Padding(
                         padding: const EdgeInsets.all(8.0),
                         child: Image.asset(
                           currentCards[index], 
-                          fit: BoxFit.contain, // <-- KEMBALI KE CONTAIN
+                          fit: BoxFit.contain, 
                         ),
                       )
-                    // BELAKANG: FULLIN (BoxFit.cover)
                     : Transform(
                         alignment: Alignment.center,
                         transform: Matrix4.identity()..rotateY(pi), 
                         child: Image.asset(
                           'assets/logo.png', 
-                          fit: BoxFit.cover, // <-- BELAKANG DI-FULL-IN
+                          fit: BoxFit.cover, 
                           width: double.infinity,
                           height: double.infinity,
                           errorBuilder: (context, error, stackTrace) {
